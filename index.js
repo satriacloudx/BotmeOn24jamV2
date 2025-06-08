@@ -198,9 +198,40 @@ app.get('/api/status', (req, res) => {
 // API endpoint untuk QR code
 app.get('/api/qr', (req, res) => {
     if (qrCodeData) {
-        res.json({ qr: qrCodeData });
+        res.json({ 
+            qr: qrCodeData,
+            timestamp: new Date().toISOString()
+        });
     } else {
-        res.json({ qr: null });
+        res.json({ 
+            qr: null,
+            message: 'No QR code available'
+        });
+    }
+});
+
+// Endpoint untuk QR code sebagai image
+app.get('/qr-image', async (req, res) => {
+    if (qrCodeData) {
+        try {
+            const QRCode = require('qrcode');
+            const qrImage = await QRCode.toDataURL(qrCodeData);
+            res.send(`
+                <html>
+                <head><title>WhatsApp QR Code</title></head>
+                <body style="text-align:center; padding:50px;">
+                    <h2>📱 Scan QR Code with WhatsApp</h2>
+                    <img src="${qrImage}" style="max-width:400px;">
+                    <p>Open WhatsApp → Settings → Linked Devices → Link Device</p>
+                    <script>setTimeout(() => window.location.reload(), 30000);</script>
+                </body>
+                </html>
+            `);
+        } catch (error) {
+            res.send('Error generating QR image: ' + error.message);
+        }
+    } else {
+        res.send('<html><body><h2>No QR Code available</h2><script>setTimeout(() => window.location.reload(), 5000);</script></body></html>');
     }
 });
 
