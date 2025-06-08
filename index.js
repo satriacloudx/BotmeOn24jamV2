@@ -18,6 +18,9 @@ let qrCodeData = null;
 let botStatus = 'Starting...';
 let clientInitialized = false;
 let lastQRTime = null;
+let messageCount = 0;
+let lastMessageTime = null;
+let connectionStartTime = new Date();
 
 // Fungsi untuk log dengan timestamp
 function logWithTime(message) {
@@ -95,7 +98,7 @@ function initializeClient() {
     });
 
     // Event: Client Ready
-    client.on('ready', () => {
+    client.on('ready', async () => {
         logWithTime('🎉 WHATSAPP BOT IS READY!');
         isClientReady = true;
         qrCodeData = null;
@@ -105,6 +108,23 @@ function initializeClient() {
         console.log('📖 MODE: Read Only (No Replies)');
         console.log('👁️ AUTO-READ: Enabled');
         console.log('='.repeat(60));
+        
+        // Test koneksi dan info bot
+        try {
+            const info = client.info;
+            logWithTime(`📱 Connected as: ${info.pushname || 'Unknown'}`);
+            logWithTime(`📞 Phone: ${info.wid.user}`);
+            logWithTime(`🔋 Battery: ${info.battery}%`);
+            logWithTime(`📶 Connected: ${info.connected ? 'Yes' : 'No'}`);
+            
+            // Get all chats untuk test
+            const chats = await client.getChats();
+            logWithTime(`💬 Total Chats: ${chats.length}`);
+            logWithTime('✅ All systems ready - Bot will now read all messages');
+            
+        } catch (error) {
+            logWithTime('⚠️ Warning getting bot info: ' + error.message);
+        }
     });
 
     // Event: Authentication Failed
@@ -139,26 +159,65 @@ function initializeClient() {
         }, 15000);
     });
 
-    // Event: Message Received
+    // Event: Message Received (Improved)
     client.on('message', async (message) => {
         try {
+            // Skip jika pesan dari bot sendiri
+            if (message.fromMe) {
+                return;
+            }
+            
+            // Update counters
+            messageCount++;
+            lastMessageTime = new Date();
+            
+            logWithTime('📨 NEW MESSAGE RECEIVED:');
+            
+            // Get contact info
             const contact = await message.getContact();
             const chat = await message.getChat();
             
-            logWithTime('📨 Message Received:');
-            console.log(`   From: ${contact.name || contact.pushname || contact.number}`);
-            console.log(`   Chat: ${chat.name || 'Private Chat'}`);
-            console.log(`   Type: ${message.type}`);
-            console.log(`   Message: ${message.body.substring(0, 100)}${message.body.length > 100 ? '...' : ''}`);
+            // Detailed logging
+            console.log('   📱 From:', contact.name || contact.pushname || contact.number);
+            console.log('   💬 Chat:', chat.name || (chat.isGroup ? 'Group Chat' : 'Private Chat'));
+            console.log('   🔤 Type:', message.type);
+            console.log('   📄 Message:', message.body ? message.body.substring(0, 200) : '[No text content]');
+            console.log('   ⏰ Time:', new Date(message.timestamp * 1000).toLocaleString());
+            console.log('   📍 Chat ID:', chat.id._serialized);
             
-            // Mark as read
-            if (!message.fromMe) {
-                await chat.sendSeen();
-                console.log('   ✅ Marked as read');
+            // Handle different message types
+            if (message.hasMedia) {
+                const media = await message.downloadMedia();
+                console.log('   📎 Media:', media.mimetype, '- Size:', media.data.length, 'bytes');
             }
+            
+            if (message.hasQuotedMsg) {
+                const quotedMsg = await message.getQuotedMessage();
+                console.log('   💭 Quoted:', quotedMsg.body ? quotedMsg.body.substring(0, 50) : '[Media]');
+            }
+            
+            // Mark as read dengan retry
+            try {
+                await chat.sendSeen();
+                console.log('   ✅ Message marked as READ');
+            } catch (readError) {
+                console.log('   ⚠️ Failed to mark as read:', readError.message);
+                // Retry setelah 1 detik
+                setTimeout(async () => {
+                    try {
+                        await chat.sendSeen();
+                        console.log('   ✅ Message marked as READ (retry)');
+                    } catch (retryError) {
+                        console.log('   ❌ Failed to mark as read (retry):', retryError.message);
+                    }
+                }, 1000);
+            }
+            
+            console.log('   ' + '-'.repeat(50));
             
         } catch (error) {
             logWithTime('❌ Error processing message: ' + error.message);
+            console.log('   Error details:', error);
         }
     });
 
@@ -166,6 +225,83 @@ function initializeClient() {
     client.on('loading_screen', (percent, message) => {
         logWithTime(`📱 Loading WhatsApp: ${percent}% - ${message}`);
         botStatus = `Loading: ${percent}% - ${message}`;
+    });
+
+    // Event: Message Create (semua pesan termasuk yang dikirim bot)
+    client.on('message_create', async (message) => {
+        try {
+            if (message.fromMe) {
+                logWithTime('📤 Outgoing message detected (from this device)');
+                return;
+            }
+            // Log singkat untuk message_create
+            logWithTime('📥 Message created event triggered');
+        } catch (error) {
+            logWithTime('❌ Error in message_create: ' + error.message);
+        }
+    });
+
+    // Event: Group Join
+    client.on('group_join', async (notification) => {
+        try {
+            logWithTime('👥 GROUP JOIN EVENT');
+            console.log('   📱 Group:', notification.chatId);
+            console.log('   👤 Participants:', notification.recipientIds.length);
+            console.log('   ⏰ Time:', new Date().toLocaleString());
+        } catch (error) {
+            logWithTime('❌ Error in group_join: ' + error.message);
+        }
+    });
+
+    // Event: Group Leave
+    client.on('group_leave', async (notification) => {
+        try {
+            logWithTime('👥 GROUP LEAVE EVENT');
+            console.log('   📱 Group:', notification.chatId);
+            console.log('   👤 Participants:', notification.recipientIds.length);
+            console.log('   ⏰ Time:', new Date().toLocaleString());
+        } catch (error) {
+            logWithTime('❌ Error in group_leave: ' + error.message);
+        }
+    });
+
+    // Event: Contact Changed
+    client.on('contact_changed', async (message, oldId, newId, isContact) => {
+        try {
+            logWithTime('📞 CONTACT CHANGED EVENT');
+            console.log('   🔄 Contact updated:', oldId, '->', newId);
+        } catch (error) {
+            logWithTime('❌ Error in contact_changed: ' + error.message);
+        }
+    });
+
+    // Event: Group Update
+    client.on('group_update', async (notification) => {
+        try {
+            logWithTime('👥 GROUP UPDATE EVENT');
+            console.log('   📱 Group:', notification.chatId);
+            console.log('   🔄 Type:', notification.type);
+            console.log('   ⏰ Time:', new Date().toLocaleString());
+        } catch (error) {
+            logWithTime('❌ Error in group_update: ' + error.message);
+        }
+    });
+
+    // Event: Media Uploaded
+    client.on('media_uploaded', (message) => {
+        logWithTime('📎 MEDIA UPLOADED: ' + message.type);
+    });
+
+    // Event: Change State
+    client.on('change_state', (state) => {
+        logWithTime('🔄 WhatsApp State Changed: ' + state);
+        if (state === 'CONNECTED') {
+            botStatus = 'Connected and Active';
+        } else if (state === 'OPENING') {
+            botStatus = 'Opening Connection...';
+        } else if (state === 'PAIRING') {
+            botStatus = 'Pairing Device...';
+        }
     });
 
     // Initialize client
@@ -274,9 +410,14 @@ app.get('/', (req, res) => {
                         <div>${uptimeStr}</div>
                     </div>
                     <div class="stat">
-                        <div class="emoji">📊</div>
-                        <div><strong>Status</strong></div>
-                        <div>${isClientReady ? 'Ready' : 'Starting'}</div>
+                        <div class="emoji">📨</div>
+                        <div><strong>Messages</strong></div>
+                        <div>${messageCount}</div>
+                    </div>
+                    <div class="stat">
+                        <div class="emoji">⏰</div>
+                        <div><strong>Last Message</strong></div>
+                        <div>${lastMessageTime ? lastMessageTime.toLocaleTimeString() : 'None'}</div>
                     </div>
                     <div class="stat">
                         <div class="emoji">🔄</div>
@@ -443,8 +584,46 @@ app.get('/api/status', (req, res) => {
         hasQR: !!qrCodeData,
         qrGenerated: lastQRTime,
         uptime: process.uptime(),
+        messagesProcessed: messageCount,
+        lastMessage: lastMessageTime,
         timestamp: new Date().toISOString()
     });
+});
+
+// Test endpoint untuk cek apakah bot bisa akses WhatsApp
+app.get('/api/test', async (req, res) => {
+    if (!isClientReady || !client) {
+        return res.json({
+            success: false,
+            message: 'Bot not ready',
+            status: botStatus
+        });
+    }
+    
+    try {
+        const info = client.info;
+        const state = await client.getState();
+        const chats = await client.getChats();
+        
+        res.json({
+            success: true,
+            message: 'Bot is working correctly',
+            data: {
+                connected_as: info.pushname || 'Unknown',
+                phone: info.wid?.user || 'Unknown',
+                battery: info.battery || 'Unknown',
+                state: state,
+                total_chats: chats.length,
+                platform: info.platform || 'Unknown'
+            }
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            message: 'Error testing bot functionality',
+            error: error.message
+        });
+    }
 });
 
 app.get('/api/qr', (req, res) => {
@@ -455,13 +634,22 @@ app.get('/api/qr', (req, res) => {
     });
 });
 
-// Health check
+// Health check dengan detail
 app.get('/health', (req, res) => {
+    const uptimeSeconds = process.uptime();
+    const uptimeHours = Math.floor(uptimeSeconds / 3600);
+    const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+    
     res.json({
         status: 'healthy',
         bot_status: botStatus,
         bot_ready: isClientReady,
-        uptime: process.uptime(),
+        has_qr: !!qrCodeData,
+        uptime_seconds: uptimeSeconds,
+        uptime_formatted: `${uptimeHours}h ${uptimeMinutes}m`,
+        messages_processed: messageCount,
+        last_message: lastMessageTime,
+        connection_start: connectionStartTime,
         memory: process.memoryUsage(),
         timestamp: new Date().toISOString()
     });
@@ -474,9 +662,21 @@ app.listen(PORT, () => {
     logWithTime(`📱 QR Code: http://localhost:${PORT}/qr-image`);
 });
 
-// Keep-alive mechanism
+// Keep-alive mechanism dengan monitoring
 setInterval(() => {
-    logWithTime(`💓 Heartbeat - Status: ${botStatus} | Ready: ${isClientReady} | QR: ${!!qrCodeData}`);
+    const uptimeHours = Math.floor(process.uptime() / 3600);
+    logWithTime(`💓 Heartbeat - Status: ${botStatus}`);
+    console.log(`   📊 Ready: ${isClientReady} | QR: ${!!qrCodeData} | Messages: ${messageCount}`);
+    console.log(`   ⏰ Uptime: ${uptimeHours}h | Last Message: ${lastMessageTime ? lastMessageTime.toLocaleTimeString() : 'None'}`);
+    
+    // Test koneksi jika ready
+    if (isClientReady && client) {
+        client.getState().then(state => {
+            console.log(`   📱 WhatsApp State: ${state}`);
+        }).catch(err => {
+            logWithTime(`⚠️ Warning - Failed to get state: ${err.message}`);
+        });
+    }
 }, 300000); // Every 5 minutes
 
 // Graceful shutdown
