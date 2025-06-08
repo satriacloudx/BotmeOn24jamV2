@@ -38,29 +38,47 @@ const client = new Client({
 
 // Event handlers untuk WhatsApp Client
 client.on('qr', (qr) => {
-    console.log('QR Code received');
+    console.log('='.repeat(50));
+    console.log('QR CODE RECEIVED - SCAN WITH WHATSAPP');
+    console.log('='.repeat(50));
     qrCodeData = qr;
     botStatus = 'QR Code generated - Please scan';
     
-    // Tampilkan QR di terminal
-    qrcode.generate(qr, { small: true });
+    // Tampilkan QR di terminal dengan error handling
+    try {
+        qrcode.generate(qr, { small: true });
+        console.log('QR Code displayed above ↑');
+    } catch (error) {
+        console.error('Error generating QR in terminal:', error);
+        console.log('QR Code data:', qr);
+        console.log('Please check the web dashboard for QR code');
+    }
+    
+    console.log('='.repeat(50));
+    console.log('Open WhatsApp → Settings → Linked Devices → Link Device');
+    console.log('Or visit your web dashboard to see QR code');
+    console.log('='.repeat(50));
 });
 
 client.on('ready', () => {
-    console.log('WhatsApp Bot is ready!');
+    console.log('='.repeat(50));
+    console.log('✅ WHATSAPP BOT IS READY AND ONLINE!');
+    console.log('='.repeat(50));
     isClientReady = true;
     qrCodeData = null;
     botStatus = 'Online and ready';
+    console.log('Bot is now reading all messages...');
 });
 
 client.on('authenticated', () => {
-    console.log('WhatsApp authenticated');
+    console.log('✅ WhatsApp authenticated successfully');
     botStatus = 'Authenticated';
 });
 
 client.on('auth_failure', (msg) => {
-    console.error('Authentication failed:', msg);
+    console.error('❌ Authentication failed:', msg);
     botStatus = 'Authentication failed';
+    qrCodeData = null; // Reset QR untuk generate ulang
 });
 
 client.on('disconnected', (reason) => {
@@ -202,7 +220,9 @@ app.listen(PORT, () => {
 });
 
 // Initialize WhatsApp client
-console.log('Initializing WhatsApp Bot...');
+console.log('🚀 Initializing WhatsApp Bot...');
+console.log('📱 Waiting for QR Code or authentication...');
+console.log('💡 Check web dashboard if QR code doesn\'t appear here');
 client.initialize();
 
 // Keep-alive ping untuk mencegah sleep
